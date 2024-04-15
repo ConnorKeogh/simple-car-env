@@ -23,13 +23,14 @@ class SimpleDrivingEnv(gym.Env):
                 low=np.array([-1, -.6], dtype=np.float32),
                 high=np.array([1, .6], dtype=np.float32))
         self.observation_space = gym.spaces.box.Box(
-            low=np.array([-40, -40, -1, -1, -5, -5, -10, -10], dtype=np.float32),
-            high=np.array([40, 40, 1, 1, 5, 5, 10, 10], dtype=np.float32))
+            low=np.array([-40, -40], dtype=np.float32),
+            high=np.array([40, 40], dtype=np.float32))
         self.np_random, _ = gym.utils.seeding.np_random()
 
         if renders:
           self._p = bc.BulletClient(connection_mode=p.GUI)
         else:
+          #self._p = bc.BulletClient(connection_mode=p.DIRECT)
           self._p = bc.BulletClient()
 
         self.reached_goal = False
@@ -81,13 +82,13 @@ class SimpleDrivingEnv(gym.Env):
 
         # Done by reaching goal
         if dist_to_goal < 1.5 and not self.reached_goal:
-            #print("reached goal")
+            print("reached goal")
             self.done = True
             self.reached_goal = True
-
+            reward += 50 #Added for points
         ob = car_ob
         return ob, reward, self.done, dict()
-
+        
     def seed(self, seed=None):
         self.np_random, seed = gym.utils.seeding.np_random(seed)
         return [seed]
