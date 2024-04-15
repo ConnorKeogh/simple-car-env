@@ -7,7 +7,6 @@ simple_driving.egg-info/dependency_links.txt
 simple_driving.egg-info/requires.txt
 simple_driving.egg-info/top_level.txt
 simple_driving/envs/__init__.py
-simple_driving/envs/racecarGymEnv.py
 simple_driving/envs/simple_driving_env.py
 simple_driving/resources/__init__.py
 simple_driving/resources/car.py
