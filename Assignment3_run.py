@@ -96,16 +96,10 @@ class Network(torch.nn.Module):
 class ReplayBuffer:
     def __init__(self, env):
         self.mem_count = 0
-
         self.states = np.zeros((MEM_SIZE, *env.observation_space.shape), dtype=np.float32            )
-        #self.states = np.zeros((MEM_SIZE, 2),dtype=np.float32)
-        
         self.actions = np.zeros(MEM_SIZE, dtype=np.int64)
         self.rewards = np.zeros(MEM_SIZE, dtype=np.float32)
-        
         self.states_ = np.zeros((MEM_SIZE, *env.observation_space.shape), dtype=np.float32            )
-        #self.states_ = np.zeros((MEM_SIZE, 2),dtype=np.float32)
-
         self.dones = np.zeros(MEM_SIZE, dtype=np.bool)
 
     def add(self, state, action, reward, state_, done):
@@ -113,9 +107,7 @@ class ReplayBuffer:
         if self.mem_count < MEM_SIZE:
             mem_index = self.mem_count
         else:
-            ############ avoid catastropic forgetting - retain initial 10% of the replay buffer ##############
             mem_index = int(self.mem_count % ((1 - MEM_RETAIN) * MEM_SIZE) + (MEM_RETAIN * MEM_SIZE))
-            ##################################################################################################
 
         self.states[mem_index]  = state
         self.actions[mem_index] = action
@@ -156,16 +148,14 @@ class DQN_Solver:
             eps_threshold = 1.0
         # if we rolled a value lower than epsilon sample a random action
         if random.random() < eps_threshold:
-            return np.random.choice(np.array(range(9)), p=[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.2])    # sample random action with set priors (if we flap too much we will die too much at the start and learning will take forever)
+            return np.random.choice(np.array(range(9)), p=[0.05,0.05,0.1,0.1,0.1,0.1,0.15,0.2,0.15])    # sample random action with set priors (if we flap too much we will die too much at the start and learning will take forever)
 
         # otherwise policy network, Q, chooses action with highest estimated Q-value so far
         state = torch.tensor(observation).float().detach()
         state = state.unsqueeze(0)
         self.policy_network.eval()  # only need forward pass
         with torch.no_grad():       # so we don't compute gradients - save memory and computation
-            ################ retrieve q-values from policy network, Q ################################
             q_values = self.policy_network(state)
-            ##########################################################################################
         return torch.argmax(q_values).item()
 
     # main training loop
@@ -287,5 +277,6 @@ torch.save(agent.policy_network.state_dict(), f"policy_network.pkl")
 
 plt.plot(episode_history, episode_reward_history)
 plt.show()
+plt.savefig("EpisideHistory")
 
 env.close()
