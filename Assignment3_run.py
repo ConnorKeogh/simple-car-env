@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from simple_driving.envs.simple_driving_env import SimpleDrivingEnv
-
+import time
 
 ######################### renders image from third person perspective for validating policy ##############################
 # env = gym.make("SimpleDriving-v0", apply_api_compatibility=True, renders=False, isDiscrete=True, render_mode='tp_camera')
@@ -42,7 +42,7 @@ from simple_driving.envs.simple_driving_env import SimpleDrivingEnv
 #env.close()
 
 # Hyper parameters that will be used in the DQN algorithm
-EPISODES = 2500                  # number of episodes to run the training for
+EPISODES = 5000                  # number of episodes to run the training for
 END_EPISODE_AFTER = 200
 LEARNING_RATE = 0.00025         # the learning rate for optimising the neural network weights
 MEM_SIZE = 50000                # maximum size of the replay memory - will start overwritting values once this is exceed
@@ -206,77 +206,105 @@ class DQN_Solver:
 
 
 
-#env = gym.make("SimpleDriving-v0", apply_api_compatibility=True, renders=False, isDiscrete=True)
-env = SimpleDrivingEnv(renders=False)
-
-env.action_space.seed(0) #keep the sim the same each time (testing)
-random.seed(0)
-np.random.seed(0)
-torch.manual_seed(0)
-
-agent = Network(env)
-state, info = env.reset()
-
 #print(env.observation_space.shape)
 
 
 #Training
 # set manual seeds so we get same behaviour everytime - so that when you change your hyper parameters you can attribute the effect to those changes
-env.action_space.seed(0)
-random.seed(0)
-np.random.seed(0)
-torch.manual_seed(0)
 episode_batch_score = 0
 episode_reward = 0
-agent = DQN_Solver(env)  # create DQN agent
 plt.clf()
 
+model_file = "policy_network.pkl"
+Train = False
 
-for i in range(EPISODES):
-    state = env.reset()  # this needs to be called once at the start before sending any actions
+if Train:
+    start_time = time.time()
+    env = SimpleDrivingEnv(renders=False)
+    env.action_space.seed(0) #keep the sim the same each time (testing)
+    state, info = env.reset()
+    random.seed(0)
+    np.random.seed(0)
+    torch.manual_seed(0)
+    agent = DQN_Solver(env)  # create DQN agent
+    state, info = env.reset()
+
+    for i in range(EPISODES):
+        state = env.reset()  # this needs to be called once at the start before sending any actions
+        while True:
+            # sampling loop - sample random actions and add them to the replay buffer
+            action = agent.choose_action(state)
+            #state_, reward, done, info = env.step(action)
+            state_, reward, done, info = env.step(action)
+            agent.memory.add(state, action, reward, state_, done)
+
+            # only start learning once replay memory reaches REPLAY_START_SIZE
+            if agent.memory.mem_count > REPLAY_START_SIZE:
+                agent.learn()
+
+            state = state_
+            episode_batch_score += reward
+            episode_reward += reward
+
+            if done:
+                break
+
+        episode_history.append(i)
+        episode_reward_history.append(episode_reward)
+        episode_reward = 0.0
+
+        # save our model every batches of 100 episodes so we can load later. (note: you can interrupt the training any time and load the latest saved model when testing)
+        if i % 100 == 0 and agent.memory.mem_count > REPLAY_START_SIZE:
+            torch.save(
+                    agent.policy_network.state_dict(),
+                    f"policy_network_e{i}.pkl",
+                )        
+            print("average total reward per episode batch since episode ", i, ": ", episode_batch_score/ float(100))
+            episode_batch_score = 0
+        elif i % 10 == 0 and agent.memory.mem_count < REPLAY_START_SIZE:
+            print("waiting for buffer to fill...", i)
+            episode_batch_score = 0
+        elif i % 10 == 0 :
+            print("buffer filled...", i)
+            episode_batch_score = 0
+        elif agent.memory.mem_count < REPLAY_START_SIZE:
+            episode_batch_score = 0
+
+    torch.save(agent.policy_network.state_dict(), f"policy_network.pkl")
+
+    plt.plot(episode_history, episode_reward_history)
+    plt.show()
+#plt.savefig("EpisideHistory")s
+    finish_time = time.time()
+    total_time = finish_time - start_time
+
+    print(f"training completed in  {total_time/60} minutes")
+
+    env.close()
+
+#Test trained policy 
+env = SimpleDrivingEnv(renders=True)
+#agent = Network(env)
+#agent.load_state_dict(torch.load(model_file))
+agent = DQN_Solver(env)  # create DQN agent
+try:
+    agent.policy_network.load_state_dict(torch.load(model_file))
+except:
+    print("No model located. Training must be completed first")
+    
+print("training policy found and loaded")
+state = env.reset()  # this needs to be called once at the start before sending any actions
+
+#test 5 times
+for i in range(5):
+    state = env.reset()
     while True:
-        # sampling loop - sample random actions and add them to the replay buffer
-        action = agent.choose_action(state)
-        #state_, reward, done, info = env.step(action)
-        state_, reward, done, info = env.step(action)
-        agent.memory.add(state, action, reward, state_, done)
-
-        # only start learning once replay memory reaches REPLAY_START_SIZE
-        if agent.memory.mem_count > REPLAY_START_SIZE:
-            agent.learn()
-
-        state = state_
-        episode_batch_score += reward
-        episode_reward += reward
-
+        with torch.no_grad():
+            q_values = agent.policy_network(torch.tensor(state, dtype=torch.float32))
+        action = torch.argmax(q_values).item()
+        state, reward, done, _ = env.step(action)
+        env.render()
         if done:
             break
-
-    episode_history.append(i)
-    episode_reward_history.append(episode_reward)
-    episode_reward = 0.0
-
-    # save our model every batches of 100 episodes so we can load later. (note: you can interrupt the training any time and load the latest saved model when testing)
-    if i % 100 == 0 and agent.memory.mem_count > REPLAY_START_SIZE:
-        torch.save(
-                agent.policy_network.state_dict(),
-                f"policy_network_e{i}.pkl",
-            )        
-        print("average total reward per episode batch since episode ", i, ": ", episode_batch_score/ float(100))
-        episode_batch_score = 0
-    elif i % 10 == 0 and agent.memory.mem_count < REPLAY_START_SIZE:
-        print("waiting for buffer to fill...", i)
-        episode_batch_score = 0
-    elif i % 10 == 0 :
-        print("buffer filled...", i)
-        episode_batch_score = 0
-    elif agent.memory.mem_count < REPLAY_START_SIZE:
-        episode_batch_score = 0
-
-torch.save(agent.policy_network.state_dict(), f"policy_network.pkl")
-
-plt.plot(episode_history, episode_reward_history)
-plt.show()
-plt.savefig("EpisideHistory")
 
 env.close()
